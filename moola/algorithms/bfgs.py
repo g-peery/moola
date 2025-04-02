@@ -105,6 +105,7 @@ class BFGS(OptimisationAlgorithm):
             - after_iteration: Is called after each each iteration.
           '''
         # Set the default options values
+        self.hooks = hooks
         self.problem = problem
         self.set_options(options)
         if self.options["Hinit"] == "default":
@@ -188,7 +189,7 @@ class BFGS(OptimisationAlgorithm):
                 pk.scale( 1./  dJ_xk.primal_norm())
 
             # do a line search and update
-            xk, ak = self.do_linesearch(objective, xk, pk)
+            xk, ak = self.do_linesearch(objective, xk, pk, prev=(J, dJ_xk))
             pk.scale(ak)
             J, oldJ = objective(xk), J
 
@@ -209,6 +210,10 @@ class BFGS(OptimisationAlgorithm):
                          'objective' : J,
                          'lbfgs'     : Hk })
             self.record_progress()
+
+            if "after_iteration" in self.hooks:
+                self.hooks["after_iteration"](xk)
+
         self.display(self.convergence_status, 1)
         self.display(self.iter_status, 1)
         return self.data

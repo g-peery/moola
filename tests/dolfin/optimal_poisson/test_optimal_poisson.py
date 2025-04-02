@@ -4,7 +4,6 @@ import pytest
 import moola
 
 
-dolfin.set_log_level(ERROR)
 parameters['std_out_all_processes'] = False
 
 def solve_pde(u, V, m):
@@ -18,11 +17,11 @@ def solve_pde(u, V, m):
 def randomly_refine(initial_mesh, ratio_to_refine= .3):
     import numpy.random
     numpy.random.seed(0)
-    cf = CellFunction('bool', initial_mesh)
+    cf = MeshFunction('bool', initial_mesh, initial_mesh.topology().dim(), False)
     for k in range(len(cf)):
         if numpy.random.rand() < ratio_to_refine:
             cf[k] = True
-    return refine(initial_mesh, cell_markers = cf)
+    return refine(initial_mesh, cf)
 
 
 try:
@@ -39,34 +38,34 @@ def moola_problem(request):
         mesh = UnitSquareMesh(N, N)
     if request.param[0] == "nonstructured mesh":
         number_of_refinements = request.param[1]
-        mesh = Mesh(Rectangle(0,0,1,1), 10)
+        mesh = RectangleMesh(Point(0,0),Point(1,1),10,10)
         for k in range(number_of_refinements):
             mesh = randomly_refine(mesh)
     V = FunctionSpace(mesh, 'CG', 2)
     Q = FunctionSpace(mesh, "CG", 2)
 
     u = Function(V, name='State')
-    expr = Expression('2*x[0]-1.')
+    expr = Expression('2*x[0]-1.',degree=1)
 
     bc = DirichletBC(Q, 0.0, "on_boundary")
     m = interpolate(expr, Q)
 
     alpha = Constant(0.1)
 
-    u_d = interpolate(Expression('pow(sin(pi*x[0])*sin(pi*x[1]),2)'), Q)
+    u_d = interpolate(Expression('pow(sin(pi*x[0])*sin(pi*x[1]),2)',degree=3), Q)
     #from numpy.random import rand
     #epsilon = 0.05
     #u_d.vector()[:] += epsilon * (rand(len(u_d.vector()))*2 - 1)
     #u_d = Function(V)
     #solve_pde(u_d, V, m_ex)
 
-    J = Functional((.5*inner(u-u_d, u-u_d))*dx+.5*alpha*m**2*dx)
-
     # Run the forward model once to create the annotation
     solve_pde(u, V, m)
 
+    J = assemble((.5*inner(u-u_d, u-u_d))*dx+.5*alpha*m**2*dx)
+
     # Run the optimisation
-    rf = ReducedFunctional(J, Control(m, value=m))
+    rf = ReducedFunctional(J, Control(m))
 
     x_init = moola.DolfinPrimalVector(m)
     options = {'jtol': None, 'gtol': None, 'display': 3, 'maxiter' : 100,}
@@ -177,8 +176,8 @@ def compute_errors(u, m):
 
 
     # Define the analytical expressions
-    m_analytic = Expression("sin(pi*x[0])*sin(pi*x[1])")
-    u_analytic = Expression("1/(2*pi*pi)*sin(pi*x[0])*sin(pi*x[1])")
+    m_analytic = Expression("sin(pi*x[0])*sin(pi*x[1])",degree=3)
+    u_analytic = Expression("1/(2*pi*pi)*sin(pi*x[0])*sin(pi*x[1])",degree=3)
 
     # Compute the error
     control_error = errornorm(m_analytic, m)
@@ -196,7 +195,7 @@ if __name__ == "__main__":
     mesh = UnitSquareMesh(n, n)
 
     def ref(mesh):
-        cf = CellFunction("bool", mesh)
+        cf = MeshFunction("bool", mesh, mesh.topology().dim(), False)
         subdomain = CompiledSubDomain('x[0]>.5')
         subdomain.mark(cf, True)
         return refine(mesh, cf)
@@ -213,10 +212,11 @@ if __name__ == "__main__":
     alpha = Constant(1e-5)
     u_d = 1/(2*pi**2)*sin(pi*x[0])*sin(pi*x[1])
 
-    J = Functional((.5*inner(u-u_d, u-u_d))*dx+.5*alpha*m**2*dx)
 
     # Run the forward model once to create the annotation
     solve_pde(u, V, m)
+
+    J = assemble((.5*inner(u-u_d, u-u_d))*dx+.5*alpha*m**2*dx)
 
     # Run the optimisation
     rf = ReducedFunctional(J, InitialConditionParameter(m, value=m))
@@ -321,6 +321,7 @@ if __name__ == "__main__":
 
 
 
+"""
 class MyFunctional(Functional):
     def __call__(self, val):
         x, y = val.data
@@ -357,6 +358,7 @@ def moola_problem():
 
 
     return Problem(objective), x_init, options
+"""
 
 @pytest.mark.parametrize("bfgs_options,bfgs_expected",
                          [ ({"gtol": 1e-12, 'mem_lim': 2}, 19),
