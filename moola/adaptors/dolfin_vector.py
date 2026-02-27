@@ -172,7 +172,7 @@ class DolfinPrimalVector(DolfinVector):
         events.increment("Inner product")
 
         v = self.riesz_map.dual_map(self.data.vector())
-        return v.inner(self.data.vector())
+        return v.inner(vec.data.vector())
 
     def norm(self):
         """ Computes the vector norm induced by the inner product. """
