@@ -4,7 +4,7 @@ from numpy import zeros
 from logging import error
 
 class StrongWolfeLineSearch(LineSearch):
-    def __init__(self, ftol=1e-4, gtol=0.9, xtol=1e-1, start_stp=1.0, stpmin = None, stpmax="automatic", verify=False, ignore_warnings=False):
+    def __init__(self, ftol=1e-4, gtol=0.9, xtol=1e-1, start_stp=1.0, stpmin = None, stpmax="automatic", verify=False, ignore_warnings=True):
         '''
         This class implements a line search algorithm whose steps
         satisfy the strong Wolfe conditions (i.e. they satisfies a
