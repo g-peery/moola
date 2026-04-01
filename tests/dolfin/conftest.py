@@ -18,4 +18,4 @@ def pytest_runtest_setup(item):
     dolfin.parameters.update(default_params)
 
     # Reset adjoint state
-    dolfin_adjoint.adj_reset()
+    dolfin_adjoint.set_working_tape(dolfin_adjoint.Tape())

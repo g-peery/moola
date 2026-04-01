@@ -3,6 +3,7 @@ from moola.linesearch import ArmijoLineSearch
 from moola.linesearch import StrongWolfeLineSearch
 from moola.linesearch import HagerZhangLineSearch
 from moola.problem import Solution
+import logging
 
 class OptimisationAlgorithm(object):
     '''
@@ -26,6 +27,7 @@ class OptimisationAlgorithm(object):
         return default
 
     def set_options(self, user_options):
+        self.logger = logging.getLogger("util")
         # Update options with provided dictionary.
         if not isinstance(user_options, dict):
             raise TypeError("Options have to be set with a dictionary object.")
@@ -56,9 +58,9 @@ class OptimisationAlgorithm(object):
          10: debug
         '''
         if level <= self.options['display']:
-            print(text)
+            self.logger.info(text)
 
-    def do_linesearch(self, obj, m, s):
+    def do_linesearch(self, obj, m, s, prev=None):
         ''' Performs a linesearch on obj starting from m in direction s. '''
 
         m_new = m.copy()
@@ -84,7 +86,12 @@ class OptimisationAlgorithm(object):
             return p, djs
 
         #get values at current point
-        phi_dphi0 = phi_dphi(0)
+        if prev is None:
+            phi_dphi0 = phi_dphi(0)
+        else:
+            p = prev[0]
+            djs = prev[1].apply(s)
+            phi_dphi0 = (p, djs)
 
         # Perform the line search
         alpha = self.linesearch.search(phi, phi_dphi, phi_dphi0)

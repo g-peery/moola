@@ -2,9 +2,10 @@ from .line_search import LineSearch
 from .dcsrch import dcsrch
 from numpy import zeros
 from logging import error
+import logging
 
 class StrongWolfeLineSearch(LineSearch):
-    def __init__(self, ftol=1e-4, gtol=0.9, xtol=1e-1, start_stp=1.0, stpmin = None, stpmax="automatic", verify=False, ignore_warnings=False):
+    def __init__(self, ftol=1e-4, gtol=0.9, xtol=1e-1, start_stp=1.0, stpmin = None, stpmax="automatic", verify=False, ignore_warnings=True):
         '''
         This class implements a line search algorithm whose steps
         satisfy the strong Wolfe conditions (i.e. they satisfies a
@@ -56,6 +57,7 @@ class StrongWolfeLineSearch(LineSearch):
         self.stpmax          = stpmax
         self.verify          = verify
         self.ignore_warnings = ignore_warnings
+        self.logger = logging.getLogger("util")
 
     def search(self, phi, phi_dphi, phi_dphi0):
         ''' Performs the line search on the function phi.
@@ -79,6 +81,10 @@ class StrongWolfeLineSearch(LineSearch):
             self.stpmin = 0.
         if self.stpmax == "automatic":
             stpmax = max(4*min(self.start_stp, 1.0), 0.1*f/(-g*self.ftol))
+            self.logger.info(
+                f"Automatic maximum step size enabled. Along the line:"
+                f" -gradient = {-g}\tmax step size = {stpmax}"
+            )
         else:
             stpmax = self.stpmax
 
@@ -98,7 +104,9 @@ class StrongWolfeLineSearch(LineSearch):
             if not self.ignore_warnings:
                 raise Warning(task)
             else:
-                print("Warning in line search: %s." % task.replace("Warning: ", ""))
+                self.logger.info(
+                    "Warning in line search: %s." % task.replace("Warning: ","")
+                )
                 return stp
         else:
             assert task=="Convergence" or ("Warning" in task and self.ignore_warnings)

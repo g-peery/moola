@@ -11,7 +11,7 @@ class NewtonCG(OptimisationAlgorithm):
     An inexact newton method.
     '''
     __name__ = 'NewtonCG'
-    def __init__(self, problem, initial_point = None, precond=LinearOperator(dual_to_primal), options = {}):
+    def __init__(self, problem, initial_point = None, precond=LinearOperator(dual_to_primal), options = {}, hooks={}):
         '''
         Initialises the Hybrid CG method. The valid options are:
          * options: A dictionary containing additional options for the steepest descent algorithm. Valid options are:
@@ -23,9 +23,12 @@ class NewtonCG(OptimisationAlgorithm):
             - line_search_options: additional options for the line search algorithm. The specific options read the help
               for the line search algorithm.
             - an optional callback method which is called after every optimisation iteration.
+         * hooks: A dictionariy containing user-defined "hook" functions that are called at certain events during the optimisation.
+            - after_iteration: Is called after each each iteration.
           '''
 
         # Set the default options values
+        self.hooks = hooks
         self.problem = problem
         self.set_options(options)
         self.linesearch = get_line_search_method(self.options['line_search'], self.options['line_search_options'])
@@ -84,8 +87,11 @@ class NewtonCG(OptimisationAlgorithm):
 
         # compute initial objective and gradient
         J = objective(x)
-        r = objective.derivative(x)  # initial residual ( with dk = 0)
+        dJ = objective.derivative(x)
+
+        r = dJ.copy()  # initial residual ( with dk = 0)
         r.scale(-1.)
+
         self.update({'objective' : J,
                      'grad_norm' : r.primal_norm()})
         self.record_progress()
@@ -94,53 +100,82 @@ class NewtonCG(OptimisationAlgorithm):
             import numpy
             eps = numpy.finfo(numpy.float64).eps
             ncg_hesstol = eps*numpy.sqrt(len(x))
+        elif options['ncg_hesstol'] == "adaptive":
+            import numpy
+            eps = numpy.finfo(numpy.float64).eps
+            ncg_hesstol = eps*r.apply(B*r)
         else:
             ncg_hesstol = options['ncg_hesstol']
 
         # Start the optimisation loop
         while self.check_convergence() == 0:
             self.display(self.iter_status, 2)
+            # p = current CG search direction
             p = Br = (B * r) # mapping residual to primal space
+            # d = Newton search direction
             d = p.copy().zero()
             rBr = r.apply(Br)
             H = objective.hessian(x)
 
 
             # CG iterations
-            cg_tol =  min(options['ncg_reltol']**2, sqrt(rBr))*rBr
+            cg_tol =  min(options['ncg_reltol']**2, rBr)*rBr
             cg_iter  = 0
             cg_break = 0
+            low_curvature_vals = None # Sentinel
             while cg_iter < options['ncg_maxiter'] and rBr >= cg_tol:
-                if False: #i < options['initial_bfgs_iterations']:
-                    d = Br
-                    break
+                self.display(f"rBr = {rBr}\ttolerance = {cg_tol}", 3)
+
+                self.display("Forming product Hp", 3)
                 Hp  = H(p)
+                self.display("Computing curvature <Hp, p> by duality pairing", 3)
                 pHp = Hp.apply(p)
 
                 self.display('cg_iter = {}\tcurve = {}\thesstol = {}'.format(cg_iter, pHp, ncg_hesstol), 3)
                 if pHp < 0:
-                    #print 'TEST: not descent direction'
                     if cg_iter == 0:
+                        self.display(
+                            "Curvature negative on first iteration of CG. "
+                            "Falling back to steppest descent.",
+                            3
+                        )
+
                         # Fall back to steepest descent
                         d = Br
+
                     # otherwise use the last computed pk
+                    self.display(
+                        "Curvature negative. "
+                        f"Stopping CG at iteration {cg_iter}",
+                        3
+                    )
                     break
 
                 if 0 <= pHp < ncg_hesstol:
+                    self.display("Curvature positive but within ncg_hesstol.", 3)
+
                     if cg_iter == 0:
+                        self.display("Low curvature occurred on 1st CG iteration, so falling back to line search.", 3)
                         # Fall back to steepest descent
                         d = Br
-                    #cg_break = 2
+                    
                     # try to use what we have
                     try:
-                        self.do_linesearch(objective, x, d) #TODO: fix this hack
-                        #print 'TEST: below curvature treshold'
+                        low_curvature_vals = self.do_linesearch(objective, x, d, prev=(J, dJ)) #TODO: fix this hack
+
+                        self.display("Linesearch failed to find a better point. Stopping CG.", 3)
+
                         break
                     except:
                         pass
+
                 # Standard CG iterations
                 alpha = rBr / pHp
+
+                # Update Newton search direction
                 d.axpy(alpha, p)            # update cg iterate
+
+                # Implicit update to residual
                 r.axpy(-alpha, Hp)          # update residual
 
                 Br = B*r
@@ -154,14 +189,20 @@ class NewtonCG(OptimisationAlgorithm):
 
 
             # do a line search and update
-            x, a = self.do_linesearch(objective, x, d)
-            d.scale(a)
-
+            self.display("CG completed.", 3)
+            if low_curvature_vals is None:
+                self.display("Now performing line search.", 3)
+                x, a = self.do_linesearch(objective, x, d, prev=(J, dJ))
+            else:
+                self.display("Reusing previous line search", 3)
+                x, a = low_curvature_vals
 
             J, oldJ = objective(x), J
 
             # evaluate gradient at the new point
-            r = objective.derivative(x)
+            dJ = objective.derivative(x)
+
+            r = dJ.copy() 
             r.scale(-1)
 
             i += 1
@@ -177,6 +218,10 @@ class NewtonCG(OptimisationAlgorithm):
                          'objective' : J,
                          'lbfgs'     : B })
             self.record_progress()
+
+            if "after_iteration" in self.hooks:
+                self.hooks["after_iteration"](x)
+
         self.display(self.convergence_status, 1)
         self.display(self.iter_status, 1)
         return self.data
