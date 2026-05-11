@@ -16,3 +16,14 @@ from . import algorithms
 from . import misc
 
 from .ui import *
+
+try:
+    import jax  # noqa: F401
+    from .adaptors.jax_vector import (  # noqa: F401
+        JaxPrimalVector,
+        JaxDualVector,
+        JaxAllAtOnceVector,
+        JaxFunctional,
+    )
+except ImportError:
+    pass
