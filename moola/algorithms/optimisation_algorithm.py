@@ -27,7 +27,7 @@ class OptimisationAlgorithm(object):
         return default
 
     def set_options(self, user_options):
-        self.logger = logging.getLogger("util")
+        self.logger = logging.getLogger("moola")
         # Update options with provided dictionary.
         if not isinstance(user_options, dict):
             raise TypeError("Options have to be set with a dictionary object.")

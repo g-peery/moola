@@ -57,7 +57,7 @@ class StrongWolfeLineSearch(LineSearch):
         self.stpmax          = stpmax
         self.verify          = verify
         self.ignore_warnings = ignore_warnings
-        self.logger = logging.getLogger("util")
+        self.logger = logging.getLogger("moola")
 
     def search(self, phi, phi_dphi, phi_dphi0):
         ''' Performs the line search on the function phi.
