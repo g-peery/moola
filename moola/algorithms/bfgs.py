@@ -181,8 +181,11 @@ class BFGS(OptimisationAlgorithm):
 
         # Start the optimisation loop
         while self.check_convergence() == 0:
+            # Display INFO log message
             self.display(self.iter_status, 2)
+
             # compute search direction
+            self.logger.debug("Computing search direction.")
             pk = - (Hk * dJ_xk)
             if it == 0:
                 # then normalize;
@@ -191,13 +194,16 @@ class BFGS(OptimisationAlgorithm):
             # do a line search and update
             xk, ak = self.do_linesearch(objective, xk, pk, prev=(J, dJ_xk))
             pk.scale(ak)
+            self.logger.debug("Evaluating objective functional.")
             J, oldJ = objective(xk), J
 
             # evaluate gradient at the new point
+            self.logger.debug("Computing derivative of objective.")
             dJ_xk, dJ_old = objective.derivative(xk), dJ_xk
             yk = dJ_xk - dJ_old
 
             # update the approximate Hessian
+            self.logger.debug("Updating the approximate Hessian.")
             Hk.update(yk, pk)
 
             it += 1

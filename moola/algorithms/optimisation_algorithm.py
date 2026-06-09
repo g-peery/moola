@@ -62,6 +62,7 @@ class OptimisationAlgorithm(object):
 
     def do_linesearch(self, obj, m, s, prev=None):
         ''' Performs a linesearch on obj starting from m in direction s. '''
+        self.logger.debug("Beginning line-search.")
 
         m_new = m.copy()
 
@@ -96,6 +97,7 @@ class OptimisationAlgorithm(object):
         # Perform the line search
         alpha = self.linesearch.search(phi, phi_dphi, phi_dphi0)
 
+        self.logger.debug(f"Line search complete. Stepping size (alpha): {alpha:.3f}")
         update_m_new(alpha)
         return m_new, float(alpha)
 

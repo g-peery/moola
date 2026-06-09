@@ -143,6 +143,15 @@ class StrongWolfeLineSearch(LineSearch):
             error("The line search could not be verified. Did you compile the pyswolfe Fortran module?")
 
     def __csrch__(self, f, g, stp, task, isave, dsave, stpmax):
+        self.logger.debug(
+            "Line search subroutine inputs: "
+            f"stp={stp:.6f}\tf={f:.6f}\tg={g:.6f}"
+            f"\tftol={self.ftol:.6f}\tgtol={self.gtol:.6f}\txtol={self.xtol:.6f}"
+            f"\ttask={task}\tstpmin={self.stpmin:.6f}\tstpmax={stpmax:.6f}"
+        )
         stp, task, isave, dsave = dcsrch(stp, f, g, self.ftol, self.gtol, self.xtol, task, self.stpmin, stpmax, isave, dsave)
+        self.logger.debug(
+            f"Line search subroutine outputs: stp={stp:.6f}\ttask={task}"
+        )
         return stp, task, isave, dsave
 
