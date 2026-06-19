@@ -204,7 +204,21 @@ class BFGS(OptimisationAlgorithm):
 
             # update the approximate Hessian
             self.logger.debug("Updating the approximate Hessian.")
-            Hk.update(yk, pk)
+            # The L-BFGS curvature condition s·y > 0 must hold to keep the
+            # inverse-Hessian approximation positive-definite. It degenerates to
+            # s·y = 0 when the line search stalls to a zero step (sk = 0 and
+            # yk = 0), which would make Hk.update's rho = 1/(s·y) divide by
+            # zero. Skip the update in that case (standard L-BFGS damping) and
+            # keep the previous approximation; the zero step then leaves the
+            # objective unchanged, so check_convergence terminates the stage.
+            sty = yk.apply(pk)
+            if sty > 0:
+                Hk.update(yk, pk)
+            else:
+                self.logger.warning(
+                    "Skipping L-BFGS Hessian update: curvature s.y = %.3e is "
+                    "not positive (stalled line search / zero step); keeping "
+                    "the previous Hessian approximation.", float(sty))
 
             it += 1
 
