@@ -23,7 +23,17 @@ class OptimisationAlgorithm(object):
     def default_options(cls):
         # this should set any parameter that all algorithms needs to know.
         default = {'display': 10,
-                   'maxiter': 100,}
+                   'maxiter': 100,
+                   # Number of CONSECUTIVE iterations that must fail the
+                   # functional-decrease test (jtol / rjtol) before the run is
+                   # declared converged. 1 reproduces the historical behaviour
+                   # exactly: because delta_J = oldJ - J is signed, a single
+                   # iteration that fails to decrease J -- one unlucky line
+                   # search -- ends the run there and then. Raising this lets a
+                   # run ride out a stalled step and distinguishes a genuine
+                   # plateau from a transient, at the cost of that many extra
+                   # iterations before stopping.
+                   'delta_J_patience': 1,}
         return default
 
     def set_options(self, user_options):
@@ -116,12 +126,24 @@ class OptimisationAlgorithm(object):
         if 'rgtol' in options and options['rgtol'] != None and 'grad_norm' in data and 'initial_grad_norm' in data:
             if data['grad_norm'] < options['rgtol'] * data['initial_grad_norm']:
                 status = 1
+        j_stalled = False
         if 'jtol' in options and options['jtol'] != None and 'delta_J' in data:
             if data['delta_J'] < options['jtol']:
-                status = 2
+                j_stalled = True
         if 'rjtol' in options and options['rjtol'] != None and 'delta_J' in data and 'initial_J' in data:
             if data['delta_J'] < options['rjtol'] * data['initial_J']:
-                status = 2
+                j_stalled = True
+        # Require delta_J_patience CONSECUTIVE stalled iterations. The counter
+        # resets on any iteration that makes the required progress, so this
+        # tests for a plateau rather than for a single bad step.
+        if 'delta_J' in data:
+            patience = options.get('delta_J_patience', 1) or 1
+            if j_stalled:
+                data['delta_J_strikes'] = data.get('delta_J_strikes', 0) + 1
+                if data['delta_J_strikes'] >= patience:
+                    status = 2
+            else:
+                data['delta_J_strikes'] = 0
         # TODO: implement more tests
         data['status'] = status
         return status
