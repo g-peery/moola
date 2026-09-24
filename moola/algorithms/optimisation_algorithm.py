@@ -33,7 +33,18 @@ class OptimisationAlgorithm(object):
                    # run ride out a stalled step and distinguishes a genuine
                    # plateau from a transient, at the cost of that many extra
                    # iterations before stopping.
-                   'delta_J_patience': 1,}
+                   'delta_J_patience': 1,
+                   # Upper bound on the l-infinity norm of the realized step,
+                   # max_i |alpha * s_i| over the control DoFs, enforced by
+                   # setting the line search's stpmax to max_step_linf/|s|_inf
+                   # for each search. The line search's own stpmax bounds only
+                   # the scalar alpha, so the step it permits scales with |s|,
+                   # whose size is set by the inverse-Hessian approximation
+                   # (and, at iteration 0, by the Riesz-norm normalization of
+                   # the gradient) -- i.e. mesh- and domain-dependent. The
+                   # l-infinity bound is the only one that is a LOCAL limit on
+                   # the change of any one DoF. None = no bound (historical).
+                   'max_step_linf': None,}
         return default
 
     def set_options(self, user_options):
@@ -104,8 +115,29 @@ class OptimisationAlgorithm(object):
             djs = prev[1].apply(s)
             phi_dphi0 = (p, djs)
 
-        # Perform the line search
-        alpha = self.linesearch.search(phi, phi_dphi, phi_dphi0)
+        # Perform the line search, with stpmax converted from the l-infinity
+        # step bound for this direction (see 'max_step_linf').
+        max_step_linf = self.options.get('max_step_linf')
+        if max_step_linf is None:
+            alpha = self.linesearch.search(phi, phi_dphi, phi_dphi0)
+        else:
+            if not hasattr(self.linesearch, 'stpmax'):
+                raise ValueError("max_step_linf needs a line search with an "
+                                 "stpmax (e.g. strong_wolfe), not "
+                                 f"{type(self.linesearch).__name__}")
+            import numpy as np
+            s_inf = float(np.max(np.abs(np.asarray(s.array()))))
+            stpmax_saved = self.linesearch.stpmax
+            self.linesearch.stpmax = max_step_linf / s_inf
+            self.logger.info(
+                f"l-inf step bound {max_step_linf:g}: |s|_inf = {s_inf:.4e},"
+                f" stpmax = {self.linesearch.stpmax:.4e}"
+                f" ({'binds' if self.linesearch.stpmax < self.linesearch.start_stp else 'inactive'}"
+                f" at start_stp = {self.linesearch.start_stp:g})")
+            try:
+                alpha = self.linesearch.search(phi, phi_dphi, phi_dphi0)
+            finally:
+                self.linesearch.stpmax = stpmax_saved
 
         self.logger.debug(f"Line search complete. Stepping size (alpha): {alpha:.3f}")
         update_m_new(alpha)
