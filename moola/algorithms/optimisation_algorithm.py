@@ -44,6 +44,11 @@ class OptimisationAlgorithm(object):
                    # the gradient) -- i.e. mesh- and domain-dependent. The
                    # l-infinity bound is the only one that is a LOCAL limit on
                    # the change of any one DoF. None = no bound (historical).
+                   # May also be an array with one bound per DoF (inf = that
+                   # DoF unbounded), for a control made of blocks with
+                   # different units, where one number cannot bound both: the
+                   # step is then the largest with |alpha * s_i| <= bound_i
+                   # for every i.
                    'max_step_linf': None,}
         return default
 
@@ -126,11 +131,19 @@ class OptimisationAlgorithm(object):
                                  "stpmax (e.g. strong_wolfe), not "
                                  f"{type(self.linesearch).__name__}")
             import numpy as np
-            s_inf = float(np.max(np.abs(np.asarray(s.array()))))
+            bound = np.asarray(max_step_linf, dtype=float)
+            s_abs = np.abs(np.asarray(s.array()))
+            # The largest alpha with alpha*|s_i| <= bound_i for every i; for a
+            # scalar bound this is bound / |s|_inf, as before.
+            ratio = s_abs / bound
+            i_bind = int(np.argmax(ratio))
             stpmax_saved = self.linesearch.stpmax
-            self.linesearch.stpmax = max_step_linf / s_inf
+            self.linesearch.stpmax = 1.0 / float(ratio[i_bind])
+            bound_str = (f"{float(bound):g}" if bound.ndim == 0 else
+                         f"per-DoF (binding DoF {i_bind}, bound "
+                         f"{float(bound.ravel()[i_bind]):g})")
             self.logger.info(
-                f"l-inf step bound {max_step_linf:g}: |s|_inf = {s_inf:.4e},"
+                f"l-inf step bound {bound_str}: |s|_inf = {float(s_abs.max()):.4e},"
                 f" stpmax = {self.linesearch.stpmax:.4e}"
                 f" ({'binds' if self.linesearch.stpmax < self.linesearch.start_stp else 'inactive'}"
                 f" at start_stp = {self.linesearch.start_stp:g})")
