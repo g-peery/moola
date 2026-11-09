@@ -8,6 +8,7 @@ __license__ = 'LGPL-3'
 __maintainer__ = 'Simon Funke'
 __email__ = 's.funke09@imperial.ac.uk'
 
+from .line_search import EvaluationFailure
 from .armijo import ArmijoLineSearch
 from .strong_wolfe import StrongWolfeLineSearch
 from .fixed import FixedLineSearch

@@ -1,3 +1,11 @@
+class EvaluationFailure(Exception):
+    """Raised by an objective or gradient evaluation that has no trustworthy
+    value at the requested point -- e.g. a PDE solve inside the functional did
+    not converge. The strong Wolfe line search catches it at a trial step and
+    searches below that step instead (see StrongWolfeLineSearch); raised
+    anywhere else it propagates to the caller of the optimiser."""
+
+
 class LineSearch:
     ''' A base class for a line search implementation. '''
 

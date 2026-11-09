@@ -12,6 +12,7 @@ __email__ = 's.funke09@imperial.ac.uk'
 from . import linalg
 from . import problem
 from . import linesearch
+from .linesearch import EvaluationFailure  # noqa: F401
 from . import algorithms
 from . import misc
 
