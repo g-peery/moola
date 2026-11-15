@@ -183,8 +183,14 @@ class JaxDualVector(Vector):
         return sqrt(self.inner(self))
 
     def primal_norm(self) -> float:
-        """Compute the norm of the corresponding primal vector."""
-        return self.primal().norm()
+        """Compute the norm of the corresponding primal vector.
+
+        ``||M^{-1} b||_M^2 = b^T M^{-1} M M^{-1} b = b^T M^{-1} b``: the dual norm, one ``solve`` and no
+        ``apply``. Going through ``self.primal().norm()`` costs a ``solve`` AND an ``apply``, and a Riesz map
+        whose ``apply`` is itself iterative (tfm_cardiax ``RestrictedRieszMap``: CG on ``solve``) then spends
+        minutes to hours per call; L-BFGS calls this every iteration for ``grad_norm`` (s234).
+        """
+        return self.norm()
 
     # ------------------------------------------------------------------
     # Vector arithmetic
