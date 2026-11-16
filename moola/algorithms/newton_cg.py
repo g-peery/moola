@@ -1,6 +1,7 @@
 from .optimisation_algorithm import *
 from .bfgs import LimitedMemoryInverseHessian, LinearOperator
 from numpy import sqrt
+from ..linesearch import EvaluationFailure
 
 
 def dual_to_primal(x):
@@ -23,6 +24,13 @@ class NewtonCG(OptimisationAlgorithm):
             - line_search_options: additional options for the line search algorithm. The specific options read the help
               for the line search algorithm.
             - an optional callback method which is called after every optimisation iteration.
+            - ncg_forcing: the forcing term eta_k (CG stops when ||r||_B <= eta_k ||g_k||_B).
+              "quadratic" (default, historical): eta_k = min(ncg_reltol, ||g_k||_B), absolute in
+              ||g_k||. "superlinear": eta_k = min(ncg_reltol, sqrt(||g_k||_B / ncg_gref)), the
+              relative Eisenstat-Walker choice of hIPPYlib (Villa et al. 2021, Alg. 1), which does
+              not depend on the scale of the gradient.
+            - ncg_gref: the reference gradient norm of the superlinear forcing term. None (default)
+              uses the norm at the initial point.
          * hooks: A dictionariy containing user-defined "hook" functions that are called at certain events during the optimisation.
             - after_iteration: Is called after each each iteration.
           '''
@@ -64,6 +72,8 @@ class NewtonCG(OptimisationAlgorithm):
              "ncg_reltol"             :  .5,
              "ncg_maxiter"            : 200,
              "ncg_hesstol"            : "default",
+             "ncg_forcing"            : "quadratic",
+             "ncg_gref"               : None,
              })
         return default
 
@@ -96,6 +106,13 @@ class NewtonCG(OptimisationAlgorithm):
                      'grad_norm' : r.primal_norm()})
         self.record_progress()
 
+        gref = options['ncg_gref']
+        if gref is None:
+            gref = self.data['grad_norm']
+        gref = float(gref)
+        if not gref > 0:
+            raise ValueError(f"ncg_gref must be positive, got {gref}")
+
         if options['ncg_hesstol'] == "default":
             import numpy
             eps = numpy.finfo(numpy.float64).eps
@@ -112,14 +129,25 @@ class NewtonCG(OptimisationAlgorithm):
             self.display(self.iter_status, 2)
             # p = current CG search direction
             p = Br = (B * r) # mapping residual to primal space
+            # Steepest-descent direction -B g, kept apart from p and Br, which CG
+            # overwrites (p is scaled in place; Br is rebound to B r_cg).
+            sd = Br.copy()
             # d = Newton search direction
             d = p.copy().zero()
             rBr = r.apply(Br)
             H = objective.hessian(x)
 
 
-            # CG iterations
-            cg_tol =  min(options['ncg_reltol']**2, rBr)*rBr
+            # CG iterations. Stop when r^T B r <= eta_k^2 * g^T B g (the residual in the
+            # preconditioner's norm, which is the gradient norm moola reports).
+            if options['ncg_forcing'] == "quadratic":
+                eta = min(options['ncg_reltol'], sqrt(rBr))
+            elif options['ncg_forcing'] == "superlinear":
+                eta = min(options['ncg_reltol'], sqrt(sqrt(rBr) / gref))
+            else:
+                raise ValueError(f"Unknown ncg_forcing {options['ncg_forcing']!r}; "
+                                 "use 'quadratic' or 'superlinear'")
+            cg_tol = eta**2 * rBr
             cg_iter  = 0
             cg_break = 0
             low_curvature_vals = None # Sentinel
@@ -141,7 +169,7 @@ class NewtonCG(OptimisationAlgorithm):
                         )
 
                         # Fall back to steepest descent
-                        d = Br
+                        d = sd
 
                     # otherwise use the last computed pk
                     self.display(
@@ -152,22 +180,27 @@ class NewtonCG(OptimisationAlgorithm):
                     break
 
                 if 0 <= pHp < ncg_hesstol:
-                    self.display("Curvature positive but within ncg_hesstol.", 3)
-
+                    # Curvature along p is too small to trust a CG step (alpha = rBr / pHp
+                    # would be huge). End CG and take a step along the direction already in
+                    # hand -- the CG iterate d, or steepest descent if CG has not moved yet --
+                    # by a line search here, whose result replaces the outer one.
+                    self.display("Curvature positive but within ncg_hesstol; stopping CG "
+                                 f"at iteration {cg_iter}.", 3)
                     if cg_iter == 0:
-                        self.display("Low curvature occurred on 1st CG iteration, so falling back to line search.", 3)
-                        # Fall back to steepest descent
-                        d = Br
-                    
-                    # try to use what we have
+                        d = sd
                     try:
-                        low_curvature_vals = self.do_linesearch(objective, x, d, prev=(J, dJ)) #TODO: fix this hack
-
-                        self.display("Linesearch failed to find a better point. Stopping CG.", 3)
-
-                        break
-                    except:
-                        pass
+                        low_curvature_vals = self.do_linesearch(objective, x, d, prev=(J, dJ))
+                        self.display("Low-curvature line search found a step.", 3)
+                    except (RuntimeError, Warning, EvaluationFailure) as exc:
+                        if cg_iter == 0:
+                            raise
+                        # The CG iterate may not be a good direction; steepest descent
+                        # always is, so try it once before giving up.
+                        self.display(f"Low-curvature line search along the CG iterate failed "
+                                     f"({exc}); retrying along steepest descent.", 3)
+                        d = sd
+                        low_curvature_vals = self.do_linesearch(objective, x, d, prev=(J, dJ))
+                    break
 
                 # Standard CG iterations
                 alpha = rBr / pHp
@@ -216,6 +249,8 @@ class NewtonCG(OptimisationAlgorithm):
                          'grad_norm' : r.primal_norm(),
                          'delta_J'   : oldJ-J,
                          'objective' : J,
+                         'cg_iter'   : cg_iter,
+                         'eta'       : eta,
                          'lbfgs'     : B })
             self.record_progress()
 

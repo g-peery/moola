@@ -17,7 +17,7 @@ JaxFunctional
 from __future__ import annotations
 
 from math import sqrt
-from typing import Callable
+from typing import Callable, Optional
 
 import jax.numpy as jnp
 
@@ -401,6 +401,13 @@ class JaxFunctional(Functional):
     riesz_map : JaxRieszMap
         Riesz map for the single control space.  For multi-block problems,
         use :class:`JaxAllAtOnceVector` and wire separately.
+    hessian_fn : callable, optional
+        ``hessian_fn(x: jnp.ndarray) -> (p: jnp.ndarray -> jnp.ndarray)`` -- the
+        Hessian (or an approximation, e.g. Gauss-Newton) at *x* as a matrix-free
+        action returning a dual-space array. Called once per point, so it can do
+        the per-point setup (e.g. assemble a tangent) before the returned action
+        is applied many times, as Newton-CG does. Needed only by second-order
+        methods (:class:`moola.NewtonCG`).
     """
 
     def __init__(
@@ -408,10 +415,12 @@ class JaxFunctional(Functional):
         assemble_fn: Callable,
         grad_fn: Callable,
         riesz_map: JaxRieszMap,
+        hessian_fn: Optional[Callable] = None,
     ):
         self._asm = assemble_fn
         self._grd = grad_fn
         self._riesz = riesz_map
+        self._hess = hessian_fn
         # Allow passing self directly to BFGS as the "problem" argument.
         self.obj = self
 
@@ -422,3 +431,10 @@ class JaxFunctional(Functional):
     def derivative(self, x: JaxPrimalVector) -> JaxDualVector:
         """Return the derivative (gradient in the dual space) at *x*."""
         return JaxDualVector(self._grd(x.array()), self._riesz)
+
+    def hessian(self, x: JaxPrimalVector) -> Callable:
+        """The Hessian action at *x*: ``H(p: JaxPrimalVector) -> JaxDualVector``."""
+        if self._hess is None:
+            raise NotImplementedError("JaxFunctional was built without a hessian_fn")
+        action = self._hess(x.array())
+        return lambda p: JaxDualVector(action(p.array()), self._riesz)

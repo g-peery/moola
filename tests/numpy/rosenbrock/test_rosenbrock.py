@@ -76,6 +76,35 @@ def test_NewtonCG(newtcg_options, newtcg_expected, moola_problem):
     assert sol['iteration'] == newtcg_expected
 
 
+def test_NewtonCG_superlinear_forcing(moola_problem):
+    """The relative forcing term eta_k = min(0.5, sqrt(||g_k|| / ||g_0||)) (hIPPYlib) converges
+    to the minimizer (1, 1), and eta_k is recorded and shrinks as ||g_k|| does."""
+    problem, x_init, options = moola_problem
+    options.update({"gtol": 1e-10, "ncg_hesstol": 0, "ncg_forcing": "superlinear"})
+    etas = []
+    solver = NewtonCG(problem, x_init, options=options,
+                      hooks={"after_iteration": lambda x: etas.append(solver.data["eta"])})
+    sol = solver.solve()
+    assert sol['grad_norm'] < 1e-10
+    assert abs(sol['control'].data[0] - 1) < 1e-8 and abs(sol['control'].data[1] - 1) < 1e-8
+    assert etas[0] == 0.5 and etas[-1] < 1e-3
+
+
+def test_NewtonCG_low_curvature_takes_a_line_search_step(moola_problem):
+    """With ncg_hesstol above every curvature, each Newton step ends CG at its first iteration and
+    steps along steepest descent by the in-CG line search: the run still decreases J every
+    iteration and never divides by the near-zero curvature."""
+    problem, x_init, options = moola_problem
+    options.update({"gtol": None, "maxiter": 20, "ncg_hesstol": 1e30})
+    Js = []
+    solver = NewtonCG(problem, x_init, options=options,
+                      hooks={"after_iteration": lambda x: Js.append(solver.data["objective"])})
+    sol = solver.solve()
+    assert sol['iteration'] == 20
+    assert all(b < a for a, b in zip(Js, Js[1:]))
+    assert solver.data['cg_iter'] == 0
+
+
 @pytest.mark.parametrize("nlcg_options,nlcg_expected",
                          [ ({"gtol": 1e-12, "beta_rule": "fletcher-reeves"}, 536),
                            ({"jtol": 1e-12, "beta_rule": "fletcher-reeves"}, 119),
